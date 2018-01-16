@@ -1,0 +1,380 @@
+<html>
+<head>
+<style>
+	body {margin:0px; padding:0px;}	
+</style>
+</head>
+
+	<script src="https://code.createjs.com/easeljs-0.8.2.min.js"></script>
+	<body onload="init();">
+		<canvas id="demoCanvas" ></canvas>
+		<script>
+		
+			var imageWidth = 100;
+			var imageHeight = 86;
+			var isConnected = false
+			
+			var tileWidth = 4;
+			var tileHeight = 4;
+			var tileResource = createTileResource();
+						
+			var ws = new WebSocket("ws://localhost:8080/map");
+			
+			var deltaPos = {"posX": 0, "posY": 0};
+			var uData = {
+				"posX":0,
+				"posY":0
+			}
+			var mapData = [];
+			
+
+			var stage 
+			document.addEventListener('keydown', function(event) {
+				if(isConnected){
+					if((event.keyCode > 36)&&(event.keyCode < 41)){
+						var reqMove = {"req": "MOVE", "param":"{\"direction\":" + event.keyCode+"}"};	
+						ws.send(JSON.stringify(reqMove));
+					}
+										
+				    if(event.keyCode == 37) {
+				        console.log('Left was pressed');
+						uData.posX -= 1;
+						deltaPos.posX = -1;
+						deltaPos.posY = 0;
+				    }
+					else if(event.keyCode == 38) {
+				        console.log('Up was pressed');
+						uData.posY += 1;
+						deltaPos.posX = 0;
+						deltaPos.posY = 1;
+				    }
+				    else if(event.keyCode == 39) {
+				        console.log('Right was pressed');
+						uData.posX += 1;
+						deltaPos.posX = 1;
+						deltaPos.posY = 0;
+				    }
+					else if(event.keyCode == 40) {
+				        console.log('Down was pressed');
+						uData.posY -= 1;
+						deltaPos.posX = 0;
+						deltaPos.posY = -1;
+				    }
+					
+					updateMapPos(uData);
+					
+					console.log(uData);
+				}
+			});
+		
+			function updateMapPos(uData){
+				for (i in mapData){
+					//console.log(mapData[i]);
+					updateTile(mapData[i],uData,stage);
+				}
+				stage.update();
+				
+			}
+		
+			function init() {
+				// code here.
+				var canvas = document.getElementById('demoCanvas');
+				var context = canvas.getContext('2d');
+				canvas.width = document.body.clientWidth ;
+            	canvas.height = document.body.clientHeight ;
+				
+				tileWidth = Math.floor(canvas.width/(imageWidth/1.2)/2);
+				tileHeight = Math.floor(canvas.height/imageHeight/2);
+				console.log("W: ", tileWidth, ", H: ", tileHeight );
+				
+				stage = new createjs.Stage("demoCanvas");
+				var circle = new createjs.Shape();
+				circle.graphics.beginFill("DeepSkyBlue").drawCircle(0, 0, 50);
+				
+				var coord = convertHexToPixel(0,0,stage);
+				circle.x = coord[0];
+				circle.y = coord[1];
+				stage.addChild(circle);
+				
+				var bitmap = new createjs.Bitmap("100_tri_base.png");
+				
+				//bitmap.setTransform(x = 300, y = 300, scaleX = 1, scaleY = 1);
+				bitmap.setTransform(x = 400, y = 300, scaleX = 1, scaleY = 1, rotation=360);
+				//stage.addChild(bitmap);
+				bitmap.image.onload = function() {
+					stage.update();
+				}
+				
+				console.log(bitmap);
+				
+				var second = [];
+				//	stage.addChild(bitmap);
+
+				
+				
+				
+				
+				//console.log(second);
+				
+				stage.update();
+				
+				
+				console.log(tileResource);
+				
+					
+				//var reqMapParams = 
+				//var reqMap = {"req": "MAP", "param":reqMapParams};
+				
+				//var reqMap = {"req": "MAP", "xStart": -2,"xEnd": 2,"yStart": -2,"yEnd": 2};	
+
+
+				ws.onopen = function()
+				{					
+					var uInit = {"req": "USER_INIT"}
+					
+					// Web Socket is connected, send data using send()
+					//ws.send("Hello, Websocket!!");
+					ws.send(JSON.stringify(uInit));
+					
+
+					console.log("Message is sent...");
+					isConnected = true;
+					
+					
+					
+				};
+				
+				ws.onmessage = function (evt) 
+				{ 
+					var received_msg = evt.data;
+					console.log("Message is received...");
+					//console.log(received_msg);
+					
+					var obj = JSON.parse(received_msg);
+					console.log(obj);
+					
+					if(obj.res == "MAP"){
+						var tData = createTile(obj,tileResource,uData,stage);						
+						
+						obj.tData = tData;
+						mapData.push(obj);
+						
+						insertTileStage(stage,tData);
+					}
+					else if(obj.res == "USER_INIT"){
+						uData.posX = obj.posX;
+						uData.posY = obj.posY;
+						console.log("RECV: UINIT ",uData);
+
+						tileRange = getRange();
+						console.log("range",tileRange);
+						var reqMap = getMapReqJSON(tileRange[0],tileRange[1],tileRange[2],tileRange[3]);
+						
+						ws.send(JSON.stringify(reqMap));
+					}
+					else if(obj.res == "USER_POS"){
+						//determine site
+						var param = "";
+						tileRange = getRange();
+						if(deltaPos.posX == 0){
+							if(deltaPos.posY > 0){
+								param = getMapReqJSON(tileRange[0],tileRange[1],tileRange[3],tileRange[3]);								
+							}
+							else{
+								param = getMapReqJSON(tileRange[0],tileRange[1],tileRange[2],tileRange[2]);								
+							}
+						}
+						else if(deltaPos.posY == 0){
+							if(deltaPos.posX > 0){
+								param = getMapReqJSON(tileRange[1],tileRange[1],tileRange[2],tileRange[3]);								
+							}
+							else{
+								param = getMapReqJSON(tileRange[0],tileRange[0],tileRange[2],tileRange[3]);								
+							}
+						}
+						
+						//console.log(param);
+						
+						//request needed parts
+						ws.send(JSON.stringify(param));
+						
+					}
+					else if(obj.res == "MAP_SEND_END"){
+						console.log("MAP send ended.")
+						tileRange = getRange()
+						console.log("Range: ", tileRange);
+						//range check and delete
+						
+						console.log("MAP len: ", mapData.length);
+						var i = mapData.length;
+						while(i){
+							
+
+							i--;
+							if(isOutOfRange(tileRange,mapData[i].posX,mapData[i].posY)){
+								console.log("Range out: ", mapData[i]);
+								removeTileStage(stage,mapData[i].tData);								
+								//stage.clear();
+								mapData.splice(i,1);
+							}
+						}
+						
+						//console.log(stage.children)
+						console.log("MAP len: ", mapData.length);
+						
+							
+							
+							
+							
+						
+					}
+					
+					//ws.close();
+				};
+
+				
+							
+				
+				
+				
+				//testCoord();
+			}
+			
+			function isOutOfRange(rangeData,x,y){
+				var deterX = (rangeData[0] > x)||(x > rangeData[1]);
+				var deterY = (rangeData[2] > y)||(y > rangeData[3]);
+				
+				//console.log(deterX, deterY);
+				
+				return deterX||deterY;
+			}
+			
+			function getMapReqJSON(xStart,xEnd,yStart,yEnd){
+				var param = {"xStart": xStart,"xEnd": xEnd,"yStart": yStart,"yEnd": yEnd};
+				var reqMap = {"req": "MAP", "param":JSON.stringify(param)};
+				return reqMap;
+			}
+			
+			function getRange(){
+				var tileRange = [];
+				
+				tileRange.push(uData.posX - Math.floor((tileWidth-1)/2)); //leftX
+				tileRange.push(uData.posX + Math.ceil((tileWidth-1)/2));  //rightX
+				tileRange.push(uData.posY - Math.ceil((tileHeight-1)/2)); //bottomY
+				tileRange.push(uData.posY + Math.floor((tileHeight-1)/2));//topY
+				
+				
+				return tileRange;
+			}
+			
+			function createTileResource(){
+				var resource = [];
+				
+				for(var i = 0; i < 2; i++){
+					var bitmap = new createjs.Bitmap("tile"+i+".png");
+					resource.push(bitmap);
+					//console.log(i,bitmap);
+				}
+				
+				return resource;
+			}
+
+			function updateTile(mapData,userData,targetStage){
+				var coord = convertHexToPixel(mapData.posX,mapData.posY,targetStage);
+				
+				for(var i = 0; i < 6; i++){					
+					mapData.tData[i].setTransform(x = coord[0], y = coord[1], scaleX = 1, scaleY = 1, rotation=60*i);
+				}
+			}
+			
+			function createTile(tileData,tileResource,userData,targetStage){
+				var tileObject = []; 
+				
+				var coord = convertHexToPixel(tileData.posX,tileData.posY,targetStage);
+				
+				for(var i = 0; i < 6; i++){
+					tileObject.push(tileResource[tileData.data[i]].clone(true));
+					tileObject[i].setTransform(x = coord[0], y = coord[1], scaleX = 1, scaleY = 1, rotation=60*i);
+					//stage.addChild(second[i]);
+					//console.log(i,tileData.data[i],tileObject[i]);
+				}
+				
+				return tileObject;
+			}
+			
+			function insertTileStage(targetStage,tile){
+				console.log(targetStage,tile);
+				for(var i = 0; i < tile.length; i++){
+					//console.log(i,tile[i]);
+					targetStage.addChild(tile[i]);
+				}
+				targetStage.update();
+			}
+			
+			function removeTileStage(targetStage,tile){				
+				for(var i = 0; i < tile.length; i++){
+					targetStage.removeChild(tile[i]);
+				}
+				targetStage.update();
+			}
+			
+			function convertHexToPixel(x,y,targetStage){
+				//console.log("width: ",targetStage.canvas.width);
+				//console.log("height: ",targetStage.canvas.height);
+				
+				var relX = x - uData.posX;
+				var relY = y - uData.posY;
+				
+				
+				var baseX = targetStage.canvas.width/2;
+				var baseY = targetStage.canvas.height/2;
+				
+				//console.log((relX+((relX%2)/2.0)));
+				//console.log(relY*2+((relX%2)/2.0));
+							
+				var coord = [];
+				var pixelX = baseX+(imageWidth*(relX+((relX)/2.0)));
+				
+				var multiplier = imageHeight
+				if(Math.abs(x)%2){
+					multiplier *= ((relY*2)+(Math.abs(relX)%2));
+				}
+				else{
+					multiplier *= ((relY*2)-(Math.abs(relX)%2));
+				}
+				var pixelY = baseY - multiplier;
+								
+				coord.push(pixelX);
+				coord.push(pixelY);
+
+				//console.log(coord);
+
+				return coord;
+			}
+
+			function convertHexToCoord(x,y,index){
+				var baseX = x*3;
+				var baseY = y*2 + x%2;
+				
+				var coordX = baseX + index%3;
+				var coordY = baseY + Math.floor(index/3);
+
+				return [coordX,coordY];
+			}
+			
+			function testCoord(){
+				for(var i = -2; i < 3; i++){
+					for(var j = -2; j < 3; j++){
+						for(var k = 0; k < 6; k++){
+							var coord = convertHexToCoord(i,j,k);
+							console.log(i,j,k," -> ", coord[0],coord[1]);
+						}
+					}
+				}
+			}			
+			
+			
+		</script>
+		
+	</body>
+</html>
